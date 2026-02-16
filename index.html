@@ -59,6 +59,13 @@
             width: auto;
             flex-shrink: 0;
         }
+        .header-logo-fallback {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--primary-color);
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+        }
 
         /* 2. Название документа (центр) */
         .header-title {
@@ -413,8 +420,11 @@
             body { background: white; padding: 0; }
             .invoice-paper { box-shadow: none; max-width: 100%; padding: 0; border: none; }
             .pay-btn { display: none !important; }
+            .download-pdf-btn-wrap { display: none !important; }
             .payment-section { border: 1px solid #ccc; background-color: #fff; }
         }
+
+        /* Стили PDF-рендера не нужны — всё делается в onclone колбэке html2canvas */
     </style>
 </head>
 <body>
@@ -423,9 +433,10 @@
         
         <!-- ШАПКА В ОДНУ СТРОКУ -->
         <header class="doc-header">
-            <!-- 1. Логотип -->
+            <!-- 1. Логотип (при ошибке загрузки показывается текст) -->
             <div class="header-logo">
-                <img src="https://z-cdn-media.chatglm.cn/files/1f7b4027-b78a-4e39-8fcb-af0917f573fb.png?auth_key=1871231233-b95bdf729a364fbe9ad22acd6bfd708b-0-a719808375b5a163ea5518528cbc50a7" alt="ARTELMIK Logo">
+                <img id="header-logo-img" src="logo.png" alt="ARTELMIK Logo" onerror="this.style.display='none'; document.getElementById('header-logo-fallback').style.display='block';">
+                <span id="header-logo-fallback" class="header-logo-fallback" style="display: none;">ARTELMIK</span>
             </div>
 
             <!-- 2. Название документа -->
@@ -481,9 +492,14 @@
             </div>
         </section>
 
-        <!-- Таблица услуг -->
+        <!-- Таблица услуг (colgroup — фиксированные ширины для PDF) -->
         <section class="table-container">
             <table>
+                <colgroup>
+                    <col class="col-address" style="width: 28%;">
+                    <col class="col-desc" style="width: 50%;">
+                    <col class="col-amount" style="width: 22%;">
+                </colgroup>
                 <thead>
                     <tr>
                         <th class="col-address">Адрес</th>
@@ -615,7 +631,7 @@
                         Безопасный онлайн-платеж
                     </div>
                     <p style="font-size: 13px; color: var(--text-gray); margin-bottom: 12px;">Оплатите счёт по защищённой ссылке.</p>
-                    <a class="payment-link" href="https://my.ripe.net/#/public/invoice?accessKey=349f2d95-7f6e-4a31-b62b-74633b3bb741" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
+                    <a class="payment-link" href="https://artelmik.ru/external-payment.html?contract=101533" target="_blank" rel="noopener noreferrer">Перейти к оплате</a>
                 </div>
 
                 <div class="payment-card payment-card-full">
@@ -646,11 +662,11 @@
                     </div>
                 </div>
             </div>
-            
-            <div style="margin-top: 20px;">
-                 <button class="pay-btn" onclick="window.location.href='#payment-link'">Оплатить онлайн 3 095 ₽</button>
-            </div>
         </section>
+
+        <div class="download-pdf-btn-wrap" style="text-align: center; margin-top: 28px; margin-bottom: 20px;">
+            <button type="button" class="pay-btn" id="download-pdf-btn" style="width: auto; min-width: 200px;">Скачать PDF</button>
+        </div>
 
         <footer class="doc-footer">
             <p style="font-size: 13px; color: var(--text-gray); margin-bottom: 12px;">При отсутствии оплаты до 19.02.2026 доступ к услугам может быть ограничен.</p>
@@ -658,6 +674,117 @@
         </footer>
 
     </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script>
+        (function () {
+            var btn = document.getElementById('download-pdf-btn');
+            if (!btn) return;
+
+            function isExternal(url) {
+                if (!url || url.startsWith('data:')) return false;
+                try { return new URL(url, location.href).origin !== location.origin; } catch (e) { return true; }
+            }
+
+            function fetchAsDataURL(src) {
+                var proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(src);
+                return fetch(proxy).then(function (r) { return r.blob(); }).then(function (blob) {
+                    return new Promise(function (resolve, reject) {
+                        var fr = new FileReader();
+                        fr.onload = function () { resolve(fr.result); };
+                        fr.onerror = reject;
+                        fr.readAsDataURL(blob);
+                    });
+                });
+            }
+
+            function imageLoad(img) {
+                return new Promise(function (resolve) {
+                    if (img.complete && img.naturalWidth) return resolve();
+                    img.onload = resolve;
+                    img.onerror = resolve;
+                });
+            }
+
+            btn.addEventListener('click', function () {
+                var el = document.querySelector('.invoice-paper');
+                if (!el) return;
+
+                btn.disabled = true;
+                btn.textContent = 'Формируем PDF…';
+
+                var imgs = el.querySelectorAll('img');
+                var originals = [];
+                var promises = [];
+
+                for (var i = 0; i < imgs.length; i++) {
+                    var img = imgs[i];
+                    var src = img.src || img.getAttribute('src');
+                    if (!src || !isExternal(src)) continue;
+                    originals.push({ img: img, src: src });
+                    (function (imageEl, imgSrc) {
+                        promises.push(
+                            fetchAsDataURL(imgSrc).then(function (dataUrl) {
+                                imageEl.src = dataUrl;
+                                return imageLoad(imageEl);
+                            }).catch(function () {})
+                        );
+                    })(img, src);
+                }
+
+                function cleanup() {
+                    originals.forEach(function (o) { o.img.src = o.src; });
+                    btn.disabled = false;
+                    btn.textContent = 'Скачать PDF';
+                }
+
+                Promise.all(promises).then(function () {
+                    return html2pdf().set({
+                        margin: [8, 6, 8, 6],
+                        filename: 'kvitanciya-SCH-2026-00003.pdf',
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: {
+                            scale: 2,
+                            useCORS: true,
+                            allowTaint: true,
+                            letterRendering: true,
+                            logging: false,
+                            scrollY: 0,
+                            scrollX: 0,
+                            onclone: function (clonedDoc) {
+                                var b = clonedDoc.body;
+                                b.style.display = 'block';
+                                b.style.padding = '0';
+                                b.style.margin = '0';
+                                b.style.background = 'white';
+
+                                var paper = clonedDoc.querySelector('.invoice-paper');
+                                if (paper) {
+                                    paper.style.boxShadow = 'none';
+                                    paper.style.borderRadius = '0';
+                                    paper.style.maxWidth = 'none';
+                                    paper.style.width = '100%';
+                                    paper.style.margin = '0';
+                                    paper.style.padding = '30px';
+                                }
+
+                                var btnWrap = clonedDoc.querySelector('.download-pdf-btn-wrap');
+                                if (btnWrap) btnWrap.style.display = 'none';
+
+                                var tables = clonedDoc.querySelectorAll('.invoice-paper table');
+                                for (var i = 0; i < tables.length; i++) {
+                                    tables[i].style.tableLayout = 'fixed';
+                                    tables[i].style.width = '100%';
+                                }
+                            }
+                        },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                        pagebreak: { mode: ['css', 'legacy'] }
+                    }).from(el).save();
+                }).then(cleanup).catch(cleanup);
+            });
+        })();
+    </script>
 
 </body>
 </html>
