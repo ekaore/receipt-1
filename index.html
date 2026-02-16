@@ -688,14 +688,19 @@
 
             function fetchAsDataURL(src) {
                 var proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(src);
-                return fetch(proxy).then(function (r) { return r.blob(); }).then(function (blob) {
-                    return new Promise(function (resolve, reject) {
-                        var fr = new FileReader();
-                        fr.onload = function () { resolve(fr.result); };
-                        fr.onerror = reject;
-                        fr.readAsDataURL(blob);
-                    });
-                });
+                return Promise.race([
+                    fetch(proxy).then(function (r) { return r.blob(); }).then(function (blob) {
+                        return new Promise(function (resolve, reject) {
+                            var fr = new FileReader();
+                            fr.onload = function () { resolve(fr.result); };
+                            fr.onerror = reject;
+                            fr.readAsDataURL(blob);
+                        });
+                    }),
+                    new Promise(function (_, reject) {
+                        setTimeout(function () { reject(new Error('timeout')); }, 3000);
+                    })
+                ]);
             }
 
             function imageLoad(img) {
@@ -742,12 +747,12 @@
                     return html2pdf().set({
                         margin: [8, 6, 8, 6],
                         filename: 'kvitanciya-SCH-2026-00003.pdf',
-                        image: { type: 'jpeg', quality: 0.98 },
+                        image: { type: 'jpeg', quality: 0.92 },
                         html2canvas: {
-                            scale: 2,
+                            scale: 1.5,
                             useCORS: true,
                             allowTaint: true,
-                            letterRendering: true,
+                            letterRendering: false,
                             logging: false,
                             scrollY: 0,
                             scrollX: 0,
