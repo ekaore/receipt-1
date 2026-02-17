@@ -757,6 +757,10 @@
                             scrollY: 0,
                             scrollX: 0,
                             onclone: function (clonedDoc) {
+                                var style = clonedDoc.createElement('style');
+                                style.textContent = '.download-pdf-btn-wrap, .download-pdf-btn-wrap *, #download-pdf-btn { display: none !important; visibility: hidden !important; height: 0 !important; overflow: hidden !important; margin: 0 !important; padding: 0 !important; }';
+                                (clonedDoc.head || clonedDoc.documentElement).appendChild(style);
+
                                 var b = clonedDoc.body;
                                 b.style.display = 'block';
                                 b.style.padding = '0';
@@ -774,7 +778,26 @@
                                 }
 
                                 var btnWrap = clonedDoc.querySelector('.download-pdf-btn-wrap');
-                                if (btnWrap) btnWrap.style.display = 'none';
+                                if (btnWrap) {
+                                    btnWrap.style.setProperty('display', 'none', 'important');
+                                    btnWrap.style.setProperty('visibility', 'hidden', 'important');
+                                    btnWrap.style.setProperty('height', '0', 'important');
+                                    btnWrap.style.setProperty('overflow', 'hidden', 'important');
+                                    btnWrap.style.setProperty('margin', '0', 'important');
+                                    btnWrap.style.setProperty('padding', '0', 'important');
+                                }
+                                var pdfBtn = clonedDoc.getElementById('download-pdf-btn');
+                                if (pdfBtn) {
+                                    pdfBtn.style.setProperty('display', 'none', 'important');
+                                    pdfBtn.style.setProperty('visibility', 'hidden', 'important');
+                                }
+
+                                var paymentSection = clonedDoc.querySelector('.payment-section');
+                                if (paymentSection) {
+                                    paymentSection.style.setProperty('page-break-inside', 'avoid', 'important');
+                                    paymentSection.style.setProperty('-webkit-column-break-inside', 'avoid', 'important');
+                                    paymentSection.style.setProperty('break-inside', 'avoid', 'important');
+                                }
 
                                 var tables = clonedDoc.querySelectorAll('.invoice-paper table');
                                 for (var i = 0; i < tables.length; i++) {
@@ -784,7 +807,11 @@
                             }
                         },
                         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                        pagebreak: { mode: ['css', 'legacy'] }
+                        pagebreak: {
+                            mode: ['css', 'legacy'],
+                            before: '.payment-section',
+                            avoid: ['.payment-section', '.payment-card', '.doc-header', '.summary-section']
+                        }
                     }).from(el).save();
                 }).then(cleanup).catch(cleanup);
             });
